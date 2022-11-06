@@ -1,4 +1,4 @@
-% Copyright (C) 2012  Nicola Fontana <ntd at entidi.it>
+% Copyright (C) 2012-2021  Nicola Fontana <ntd at entidi.it>
 %
 % This program can be redistributed and/or modified under
 % the terms of the LaTeX Project Public License, either
@@ -24,17 +24,20 @@
 
 \NeedsTeXFormat{LaTeX2e}
 \ProvidesClass{tccv}
-              [2012/11/09 v1.0
- Two Column Curriculum Vitae]
+	      [2021/12/16 v1.3.1
+	       Two Column Curriculum Vitae]
 
 \LoadClass[10pt]{scrartcl}
 
 \setcounter{secnumdepth}{-1}
-\RequirePackage[hmargin=1.5cm,vmargin=1.5cm,twocolumn,columnsep=1.5cm]{geometry}
-\RequirePackage{bookman,etoolbox,hyperref,marvosym,needspace,tabularx,xcolor,titlesec}
+\RequirePackage[hmargin=1.25cm,vmargin=1.25cm,twocolumn,columnsep=1.25cm]{geometry}
+\RequirePackage{etoolbox,needspace,pifont,tabularx,xcolor,hyperref}
 
-\titlespacing\section{0pt}{4pt}{8pt}
-\titlespacing\subsection{0pt}{4pt}{4pt}
+% Use fontspec on lualatex and bookman on pdflatex
+\@ifundefined{directlua}%
+    {\RequirePackage{bookman}}%
+    {\RequirePackage{fontspec}\setmainfont{TeX Gyre Bonum}}
+
 
 % Capitalize words of at least a minimum length (default to 3 chars).
 % The text is capitalized before being expanded.
@@ -42,30 +45,46 @@
 % This macro uses Lua to do the job but fails gracefully (that is,
 % return the text as is) if \directlua is not available.
 %
-% |[
-% \ucwords[optional: miminum length]{text}
-% ]|
+%     \ucwords
+%         [optional: miminum length]{text}
 \newcommand\ucwords[2][3]{%
     % Fails gracefully if not in LuaLaTeX
     \providecommand\directlua[1]{#2}%
     \directlua{%
-	local minlen=tonumber("#1")
-	local src="\luaescapestring{\unexpanded{#2}}"
-	local dst={}
-	for w in src:gmatch('[^\string\%s]+') do
-	    if w:len() >= minlen then w = w:sub(1,1):upper()..w:sub(2) end
-	    table.insert(dst, w)
+	local minlen = tonumber("#1")
+	local src = "\luaescapestring{\unexpanded{#2}}"
+	local dst = {}
+	% Put a % inside \directlua is tricky as hell. Use char(37)
+	% instead: still no plans for supporting non-ASCII platforms.
+	for w in src:gmatch(string.char(37) .. "S+") do
+	    if w:len() >= minlen then
+		table.insert(dst, w:sub(1,1):upper() .. w:sub(2))
+	    else
+		table.insert(dst, w)
+	    end
 	end
 	tex.print(dst)}}
 
+% Default color theme
+\definecolor{foregound}{HTML}{303030}
+\definecolor{url}{HTML}{506060}
+\definecolor{link}{HTML}{506060}
+\definecolor{header}{HTML}{801010}
+\definecolor{personal}{HTML}{F5DD9D}
+
+% Allow the resume's theme to be B/W only
+\DeclareOption{blackwhite}{%
+    \definecolor{header}{HTML}{1C1C1C}%
+    \definecolor{personal}{HTML}{F7F7F7}}
+
+\ProcessOptions\relax
+
 \pagestyle{empty}
 \setlength\parindent{0pt}
-\color[HTML]{303030} % Default foreground color
-\definecolor{link}{HTML}{506060} % Hyperlinks
-\hypersetup{colorlinks,breaklinks,urlcolor=link,linkcolor=link}
-\setkomafont{disposition}{\color[HTML]{801010}}
+\color{foregound} % Default foreground color
+\hypersetup{colorlinks,breaklinks,urlcolor=url,linkcolor=link}
+\setkomafont{disposition}{\color{header}}
 \setkomafont{section}{\scshape\Large\mdseries}
-
 \newkomafont{cv}{%
     \@ifundefined{directlua}%
 	{\fontfamily{pzc}\selectfont\Huge}%
@@ -73,8 +92,8 @@
 
 % In tccv \part must contain the subject of the curriculum vitae.
 % The command will start a new page and output in onecolumn the
-% subject (first and last name) with the hardcoded text
-% "Curriculum vitae" under it.
+% subject (first and last name) with the text from the optional
+% argument underneath it
 \renewcommand\part[1]{%
     \twocolumn[%
     \begin{center}
@@ -85,71 +104,87 @@
 
 % Overrides the \section command to capitalize every
 % word for cosmetic purposes and draws a rule under it.
-\makeatletter
 \let\old@section\section
 \renewcommand\section[2][]{%
     \old@section[#1]{\ucwords{#2}}%
     \newdimen\raising%
     \raising=\dimexpr-0.7\baselineskip\relax%
     \vskip\raising\hrule height 0.4pt\vskip-\raising}
-\makeatother
 
 % Allow conditionals based on the job name. This can usually be set
 % from a command-line argument: check fausto.en.tex for an example.
 %
-% |[
-% \ifjob{jobname}{content if matches}{content if does not match}
-% ]|
+%     \ifjob
+%         {jobname}
+%         {content if matches}
+%         {content if does not match}
 \newcommand\ifjob[3]{%
     \edef\JOBNAME{\jobname}%
     \edef\PIVOT{\detokenize{#1}}%
-    \ifdefstrequal{\JOBNAME}{\PIVOT}{#2}{#3}%
-}
+    \ifdefstrequal{\JOBNAME}{\PIVOT}{#2}{#3}}
+
+% Creates an unordered list of keys (optionals) and values (i.e. a
+% description text) inside a colored box. See the `\personal` command
+% for a real use case.
+%
+%     \begin{keyvaluelist}{color}
+%         \item[key text] value text...
+%         ...
+%     \end{keyvaluelist}
+\newcounter{KEYVALUECOUNTER}%
+\newenvironment{keyvaluelist}[1]{%
+    \newcommand\KEYVALUECOLOR{#1}%
+    \renewcommand\item[1][]{%
+	\stepcounter{KEYVALUECOUNTER}%
+	\ifnumequal{\value{KEYVALUECOUNTER}}{1}{}{\smallskip\cr}%
+	##1 & }%
+    \newdimen\boxwidth\boxwidth=\dimexpr\linewidth-2\fboxsep\relax%
+    % Tried to use \savebox and lrbox environment without success:
+    % both fail complaining about some phantom } missing. I'm too
+    % tired to guess what LaTeX wants... falling back to TeX here.
+    \setbox0=\hbox\bgroup%
+    \tabularx{\boxwidth}{c|X}}
+    {\endtabularx\egroup\colorbox{\KEYVALUECOLOR}{\box0}%
+     \setcounter{KEYVALUECOUNTER}{0}}
 
 % Renders a personal data box:
 %
-% |[
-% \personal[optional: web site without scheme (no http:// prefix)]
-%          {address}{phone number}{email}
-% ]|
+%     \personal
+%         [url without scheme, i.e. no http:// prefix]
+%         {email}
 \newcommand\personal[2][]{%
+    \newcommand\SYMBOL[1]{\raisebox{-2pt}{\Large\ding{##1}}}%
     \needspace{0.5\textheight}%
-    \newdimen\boxwidth%
-    \boxwidth=\dimexpr\linewidth-2\fboxsep\relax%
-    \colorbox[HTML]{F5DD9D}{%
-    \begin{tabularx}{\boxwidth}{c|X}
-    \Letter      & \href{mailto:#2}{#2}
-    \ifstrempty{#1}{}{\smallskip\\ \Lightning & \href{http://#1}{#1}}
-    \end{tabularx}}
-    {\smallskip}}
+    \begin{keyvaluelist}{personal}
+	\item[\SYMBOL{41}] \href{mailto:#2}{#2}
+	\ifstrempty{#1}{}{\item[\SYMBOL{218}] \href{https://#1}{#1}}
+    \end{keyvaluelist}}
 
 % Every \item can be followed by one or more paragraphs
 % of description:
 %
-% |[
-% \item{date range}{company}{role}
-%
-% Description of what achieved during this application.
-% ]|
+%     \item
+%         {date range}
+%         {company}
+%         {role}
+%     One or more paragraphs describing what achieved during this application.
 \newenvironment{eventlist}{%
     \newcommand*\inskip{}
     \renewcommand\item[3]{%
 	\inskip%
 	{\raggedleft\textsc{##1}\\[1pt]}
-	{##2}\\[2pt]
+	\ifstrempty{##2}{}{##2\\[2pt]}
 	{\Large\textit{##3}}
 	\medskip
-	\renewcommand\inskip{\medskip}}}
-    \medskip
+	\renewcommand\inskip{\bigskip}}}
+    {\bigskip}
 
 % Every \item can be followed by one or more paragraphs
 % of description:
 %
-% |[
-% \item{title}
-%
-% Description of what achieved during this application.
-% ]|
+%     \item
+%         {title}
+%     One or more paragraphs describing the project.
 \newenvironment{projectlist}{%
     \newcommand*\inskip{}
     \renewcommand\item[1]{%
@@ -157,19 +192,21 @@
 	{\Large\textit{##1}}
 	\medskip
 	\renewcommand\inskip{\bigskip}}}
-    {\medskip}
+    {\bigskip}
 
-% Use only \item inside this environment: no other macros
+% Use only \item inside this environment, no other macros
 % are allowed:
 %
-% |[
-% \item[optional: what has been achieved]{years}{subject}{notes}
-% ]|
+%     \item
+%         [what has been achieved]
+%         {years}
+%         {subject}
+%         {notes}
 \newenvironment{yearlist}{%
     \renewcommand\item[4][]{%
-	{\textsc{##2}} & {\bfseries ##3} \\
-	\ifstrempty{##1}{}{& {\textsc{##1}} \\}
-	& {\textit{##4}}\medskip\\}
+	\textsc{##2} & \textbf{##3} \\
+	\ifstrempty{##1}{}{& \textsc{##1} \\}
+	& \textit{##4}\medskip\\}
     \tabularx{\linewidth}{rX}}
     {\endtabularx}
 
@@ -177,15 +214,25 @@
 % Use only \item inside this environment: no other macros
 % are allowed:
 %
-% |[
-% \item{fact}{description}
-% ]|
+%     \item
+%         {fact}
+%         {description}
 \newenvironment{factlist}{%
     \newdimen\unbaseline
     \unbaseline=\dimexpr-\baselinestretch\baselineskip\relax
     \renewcommand\item[2]{%
-	\textsc{##1} & {\raggedright ##2\smallskip\\}\\[\unbaseline]}
+	\textsc{##1} & {\raggedright ##2\medskip\\}\\[\unbaseline]}
     \tabularx{\linewidth}{rX}}
     {\endtabularx}
+
+% Avoid dealing with starred sections
+% See the following question for further details:
+% http://tex.stackexchange.com/questions/223607/does-the-bibliography-command-specify-a-section-anywhere
+\KOMAoption{bibliography}{totocnumbered}
+
+\AtEndPreamble{%
+    \@ifpackageloaded{biblatex}{%
+	\defbibheading{bibliography}[\refname]{\section{#1}}}{}}
+
 %%
 %% End of file `tccv.cls'.
